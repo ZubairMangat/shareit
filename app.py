@@ -3,16 +3,19 @@ import streamlit as st
 import os
 
 # Function to send a file
-def send_file(file, receiver_ip, port):
+def send_file(file_path, receiver_ip, port):
     try:
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client_socket.connect((receiver_ip, port))  # Connect to the receiver
 
-        with open(file, "rb") as f:
-            while True:
-                chunk = f.read(1024)
-                if not chunk:
-                    break
+        # Send file name first
+        file_name = os.path.basename(file_path)
+        client_socket.send(file_name.encode('utf-8'))
+        client_socket.recv(1024)  # Wait for acknowledgment
+
+        # Send the file data
+        with open(file_path, "rb") as f:
+            while chunk := f.read(1024):
                 client_socket.sendall(chunk)
 
         st.success("File sent successfully!")
@@ -25,45 +28,40 @@ def send_file(file, receiver_ip, port):
 def receive_file_server(port):
     try:
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-        # Bind to the port and listen
         server_socket.bind(("0.0.0.0", port))
         server_socket.listen(1)
 
         conn, addr = server_socket.accept()
         st.info(f"Connected to {addr}")
 
-        # Receive file with a known name
-        file_name = "received_file"
-        with open(file_name, "wb") as file:
-            while True:
-                data = conn.recv(1024)
-                if not data:
-                    break
-                file.write(data)
+        # Receive the file name first
+        file_name = conn.recv(1024).decode('utf-8')
+        conn.send(b"ACK")  # Acknowledge receipt of the file name
 
-        st.success("File received successfully!")
+        received_file_path = os.path.join("downloads", file_name)
 
-        # Guess file type and extension
-        file_extension = os.path.splitext(file_name)[-1]
-        download_file_name = file_name if file_extension else "received_file.bin"
+        # Ensure the downloads directory exists
+        os.makedirs(os.path.dirname(received_file_path), exist_ok=True)
+
+        # Receive the file data
+        with open(received_file_path, "wb") as file:
+            while chunk := conn.recv(1024):
+                file.write(chunk)
+
+        st.success(f"File received successfully! Saved as: {received_file_path}")
 
         # Provide download option for the file
-        with open(file_name, "rb") as file:
+        with open(received_file_path, "rb") as file:
             file_data = file.read()
             st.download_button(
                 label="Download Received File",
                 data=file_data,
-                file_name=download_file_name,
+                file_name=file_name,
                 mime="application/octet-stream"
             )
 
         conn.close()
         server_socket.close()
-
-        # Clean up temporary file after download
-        if os.path.exists(file_name):
-            os.remove(file_name)
 
     except OSError as e:
         if e.errno == 98:  # Address already in use
@@ -111,7 +109,7 @@ def main():
         st.title("Send a File")
 
         # File selection
-        file = st.file_uploader("Choose a file to send", type=["jpg", "png", "txt", "pdf", "zip", "mp4"])
+        file = st.file_uploader("Choose a file to send", type=["jpg", "png", "txt", "pdf", "zip", "mp4", "docx"])
 
         # Receiver IP and Port
         receiver_ip = st.text_input("Enter Receiver IP Address (e.g., 192.168.0.122)")
