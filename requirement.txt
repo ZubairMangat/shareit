@@ -3,5 +3,5 @@ socket
 os
 datetime
 json
-magic
+python-magic-bin==0.4.14 
 hashlib
