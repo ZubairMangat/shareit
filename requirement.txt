@@ -4,3 +4,4 @@ os
 datetime
 json
 magic
+hashlib
